@@ -3,6 +3,7 @@ set -euo pipefail
 
 VERSION="0.1.0"
 IMAGE_NAME="${IMAGE_NAME:-revebian}"
+REVEBIAN_BIND_ADDR="${REVEBIAN_BIND_ADDR:-127.0.0.1}"
 FRIDA_HOST_PORT="${FRIDA_HOST_PORT:-27042}"
 FRIDA_CONTROL_PORT="${FRIDA_CONTROL_PORT:-27043}"
 CALLER_CWD="$(pwd)"
@@ -85,6 +86,7 @@ compose() {
     USER_UID="${USER_UID:-$(id -u)}" \
     USER_GID="${USER_GID:-$(id -g)}" \
     INSTALL_WINE="${INSTALL_WINE:-0}" \
+    REVEBIAN_BIND_ADDR="${REVEBIAN_BIND_ADDR}" \
     FRIDA_HOST_PORT="${FRIDA_HOST_PORT}" \
     FRIDA_CONTROL_PORT="${FRIDA_CONTROL_PORT}" \
     REVEBIAN_WORKSPACE="${WORKSPACE}" \
@@ -146,7 +148,7 @@ start_env() {
     compose up -d revebian
     compose exec -T revebian start-frida-server >/dev/null
     wait_for_frida
-    echo "frida-server: 127.0.0.1:${FRIDA_HOST_PORT}"
+    echo "frida-server: ${REVEBIAN_BIND_ADDR}:${FRIDA_HOST_PORT}"
 }
 
 install_cli() {
@@ -253,8 +255,8 @@ doctor() {
         echo "image: ${IMAGE_NAME} missing"
     fi
 
-    echo "frida host port: 127.0.0.1:${FRIDA_HOST_PORT}"
-    echo "frida control port: 127.0.0.1:${FRIDA_CONTROL_PORT}"
+    echo "frida host port: ${REVEBIAN_BIND_ADDR}:${FRIDA_HOST_PORT}"
+    echo "frida control port: ${REVEBIAN_BIND_ADDR}:${FRIDA_CONTROL_PORT}"
 }
 
 cmd="${1:-shell}"

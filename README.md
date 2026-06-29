@@ -114,6 +114,22 @@ By default, Compose binds Frida to localhost only:
 
 This keeps the Frida server reachable from your machine without exposing it to the network.
 
+The Compose configuration already includes the Docker runtime options Frida needs:
+
+```text
+--cap-add=SYS_PTRACE
+--security-opt seccomp=unconfined
+-p 127.0.0.1:27042:27042
+```
+
+If you intentionally want the same network exposure as `docker run -p 27042:27042`, bind to all interfaces:
+
+```bash
+REVEBIAN_BIND_ADDR=0.0.0.0 revebian up
+```
+
+Only use `0.0.0.0` on a trusted network. It exposes the Frida port outside your machine.
+
 From the host:
 
 ```bash
@@ -177,6 +193,12 @@ FRIDA_HOST_PORT=37042 FRIDA_CONTROL_PORT=37043 revebian
 ```
 
 The container still listens on `27042` and `27043`; only the host bindings change.
+
+You can also change the bind address:
+
+```bash
+REVEBIAN_BIND_ADDR=0.0.0.0 FRIDA_HOST_PORT=27042 revebian up
+```
 
 ## Notes
 

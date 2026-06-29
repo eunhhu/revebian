@@ -114,6 +114,22 @@ revebian build --no-wine --no-cache
 
 이렇게 하면 내 머신에서는 Frida server에 접근할 수 있지만 외부 네트워크에는 노출되지 않습니다.
 
+Frida에 필요한 Docker runtime 옵션은 이미 Compose 설정에 들어 있습니다.
+
+```text
+--cap-add=SYS_PTRACE
+--security-opt seccomp=unconfined
+-p 127.0.0.1:27042:27042
+```
+
+일부 문서의 `docker run -p 27042:27042`처럼 외부 전체 인터페이스로 열고 싶다면 이렇게 실행합니다.
+
+```bash
+REVEBIAN_BIND_ADDR=0.0.0.0 revebian up
+```
+
+`0.0.0.0`은 Frida 포트를 외부에도 노출합니다. 신뢰할 수 있는 네트워크에서만 쓰세요.
+
 호스트에서:
 
 ```bash
@@ -177,6 +193,12 @@ FRIDA_HOST_PORT=37042 FRIDA_CONTROL_PORT=37043 revebian
 ```
 
 컨테이너 내부에서는 계속 `27042`, `27043`으로 listen합니다. 바뀌는 것은 호스트 바인딩뿐입니다.
+
+바인딩 주소도 바꿀 수 있습니다.
+
+```bash
+REVEBIAN_BIND_ADDR=0.0.0.0 FRIDA_HOST_PORT=27042 revebian up
+```
 
 ## 참고
 
