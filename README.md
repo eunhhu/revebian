@@ -166,6 +166,8 @@ REVEBIAN_WORKSPACE=/path/to/target revebian
 
 The Revebian repository is only used for `Dockerfile`, `docker-compose.yml`, and the CLI itself.
 
+On Docker Desktop, the workspace path must be a Docker-shared host path. If you run from a temporary or unshared directory and `/workspace` looks empty, run from a shared path such as your home directory or set `REVEBIAN_WORKSPACE` to one.
+
 ## Custom Ports
 
 You can change the host-side Frida ports with environment variables:

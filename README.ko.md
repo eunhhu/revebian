@@ -166,6 +166,8 @@ REVEBIAN_WORKSPACE=/path/to/target revebian
 
 Revebian repository는 `Dockerfile`, `docker-compose.yml`, CLI 자체를 찾는 용도로만 쓰입니다.
 
+Docker Desktop에서는 workspace 경로가 Docker에 공유된 host 경로여야 합니다. 임시 디렉터리나 공유되지 않은 경로에서 실행했을 때 `/workspace`가 비어 보이면, 홈 디렉터리처럼 공유된 경로에서 실행하거나 `REVEBIAN_WORKSPACE`를 공유된 경로로 지정하세요.
+
 ## 포트 변경
 
 호스트 쪽 Frida 포트는 환경변수로 바꿀 수 있습니다.
