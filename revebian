@@ -1,0 +1,334 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="0.1.0"
+IMAGE_NAME="${IMAGE_NAME:-revebian}"
+FRIDA_HOST_PORT="${FRIDA_HOST_PORT:-27042}"
+FRIDA_CONTROL_PORT="${FRIDA_CONTROL_PORT:-27043}"
+CALLER_CWD="$(pwd -P)"
+
+resolve_self() {
+    local source dir target
+    source="${BASH_SOURCE[0]}"
+    while [[ -h "${source}" ]]; do
+        dir="$(cd -P "$(dirname "${source}")" >/dev/null 2>&1 && pwd)"
+        target="$(readlink "${source}")"
+        if [[ "${target}" == /* ]]; then
+            source="${target}"
+        else
+            source="${dir}/${target}"
+        fi
+    done
+    cd -P "$(dirname "${source}")" >/dev/null 2>&1 && pwd
+}
+
+ROOT="${REVEBIAN_HOME:-$(resolve_self)}"
+WORKSPACE="${REVEBIAN_WORKSPACE:-${CALLER_CWD}}"
+case "${WORKSPACE}" in
+    /*) ;;
+    *) WORKSPACE="${CALLER_CWD}/${WORKSPACE}" ;;
+esac
+
+usage() {
+    cat <<'EOF'
+usage: revebian [command] [args]
+
+commands:
+  shell          start container + frida-server, then enter fish (default)
+  up            start container + frida-server in background
+  server        run frida-server in foreground
+  ps            list processes through frida-server
+  attach        attach through frida-server: revebian attach <pid|name> [frida args...]
+  exec          run a command inside the container
+  build         build image; add --wine to include Wine
+  install       install this CLI as a symlink
+  uninstall     remove installed symlink
+  doctor        check Docker, Compose, project root, workspace, and image status
+  stop          stop containers
+  help          show this help
+  version       show version
+
+examples:
+  revebian install
+  revebian build
+  revebian build --wine
+  revebian
+  revebian ps
+  revebian attach 1234 -l hook.js
+EOF
+}
+
+die() {
+    echo "revebian: $*" >&2
+    exit 1
+}
+
+in_project_root() {
+    [[ -f "${ROOT}/Dockerfile" && -f "${ROOT}/docker-compose.yml" ]]
+}
+
+require_project_root() {
+    in_project_root || die "project root not found at ${ROOT}; set REVEBIAN_HOME=/path/to/revebian"
+    cd "${ROOT}"
+}
+
+require_workspace() {
+    [[ -d "${WORKSPACE}" ]] || die "workspace not found at ${WORKSPACE}; set REVEBIAN_WORKSPACE=/path/to/workspace"
+}
+
+ensure_docker() {
+    command -v docker >/dev/null 2>&1 || die "docker not found"
+    docker compose version >/dev/null 2>&1 || die "docker compose plugin not found"
+}
+
+compose() {
+    USER_UID="${USER_UID:-$(id -u)}" \
+    USER_GID="${USER_GID:-$(id -g)}" \
+    INSTALL_WINE="${INSTALL_WINE:-0}" \
+    FRIDA_HOST_PORT="${FRIDA_HOST_PORT}" \
+    FRIDA_CONTROL_PORT="${FRIDA_CONTROL_PORT}" \
+    REVEBIAN_WORKSPACE="${WORKSPACE}" \
+    docker compose "$@"
+}
+
+build_image() {
+    require_project_root
+    ensure_docker
+
+    local wine="${INSTALL_WINE:-0}"
+    local args=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --wine)
+                wine=1
+                ;;
+            --no-wine)
+                wine=0
+                ;;
+            *)
+                args+=("$1")
+                ;;
+        esac
+        shift
+    done
+
+    if [[ "${#args[@]}" -gt 0 ]]; then
+        INSTALL_WINE="${wine}" compose build "${args[@]}" revebian
+    else
+        INSTALL_WINE="${wine}" compose build revebian
+    fi
+}
+
+ensure_image() {
+    if ! docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
+        build_image
+    fi
+}
+
+wait_for_frida() {
+    local i
+    for i in $(seq 1 40); do
+        if compose exec -T revebian frida-ps-local >/dev/null 2>&1; then
+            return 0
+        fi
+        sleep 0.25
+    done
+
+    compose logs --tail=80 revebian >&2 || true
+    die "frida-server did not become ready"
+}
+
+start_env() {
+    require_project_root
+    require_workspace
+    ensure_docker
+    ensure_image
+    compose up -d revebian
+    compose exec -T revebian start-frida-server >/dev/null
+    wait_for_frida
+    echo "frida-server: 127.0.0.1:${FRIDA_HOST_PORT}"
+}
+
+install_cli() {
+    local target="${HOME}/.local/bin/revebian"
+    local force=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)
+                [[ $# -ge 2 ]] || die "--target requires a path"
+                target="$2"
+                shift
+                ;;
+            --force|-f)
+                force=1
+                ;;
+            *)
+                die "unknown install option: $1"
+                ;;
+        esac
+        shift
+    done
+
+    require_project_root
+    mkdir -p "$(dirname "${target}")"
+    if [[ -e "${target}" || -L "${target}" ]]; then
+        if [[ "${force}" -ne 1 ]]; then
+            die "${target} already exists; use: revebian install --force"
+        fi
+        rm -f "${target}"
+    fi
+
+    ln -s "${ROOT}/revebian" "${target}"
+    echo "installed: ${target}"
+    case ":${PATH}:" in
+        *":$(dirname "${target}"):"*) ;;
+        *) echo "note: add $(dirname "${target}") to PATH" ;;
+    esac
+}
+
+uninstall_cli() {
+    local target="${HOME}/.local/bin/revebian"
+    local force=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target)
+                [[ $# -ge 2 ]] || die "--target requires a path"
+                target="$2"
+                shift
+                ;;
+            --force|-f)
+                force=1
+                ;;
+            *)
+                die "unknown uninstall option: $1"
+                ;;
+        esac
+        shift
+    done
+
+    if [[ ! -e "${target}" && ! -L "${target}" ]]; then
+        echo "not installed: ${target}"
+        return 0
+    fi
+
+    if [[ "${force}" -ne 1 && -L "${target}" ]]; then
+        local linked
+        linked="$(readlink "${target}")"
+        [[ "${linked}" == "${ROOT}/revebian" ]] || die "${target} points to ${linked}; use --force to remove"
+    elif [[ "${force}" -ne 1 && ! -L "${target}" ]]; then
+        die "${target} is not a symlink; use --force to remove"
+    fi
+
+    rm -f "${target}"
+    echo "removed: ${target}"
+}
+
+doctor() {
+    echo "revebian ${VERSION}"
+    echo "root: ${ROOT}"
+    echo "workspace: ${WORKSPACE}"
+    if in_project_root; then
+        echo "project: ok"
+    else
+        echo "project: missing Dockerfile/docker-compose.yml"
+    fi
+
+    if command -v docker >/dev/null 2>&1; then
+        echo "docker: $(docker --version)"
+        if docker compose version >/dev/null 2>&1; then
+            echo "compose: $(docker compose version)"
+        else
+            echo "compose: missing"
+        fi
+    else
+        echo "docker: missing"
+        echo "compose: missing"
+    fi
+
+    if docker image inspect "${IMAGE_NAME}" >/dev/null 2>&1; then
+        echo "image: ${IMAGE_NAME} present"
+    else
+        echo "image: ${IMAGE_NAME} missing"
+    fi
+
+    echo "frida host port: 127.0.0.1:${FRIDA_HOST_PORT}"
+    echo "frida control port: 127.0.0.1:${FRIDA_CONTROL_PORT}"
+}
+
+cmd="${1:-shell}"
+if [[ $# -gt 0 ]]; then
+    shift
+fi
+
+case "${cmd}" in
+    shell)
+        start_env
+        if [[ -t 0 && -t 1 ]]; then
+            compose exec revebian fish -l
+        else
+            compose exec -T revebian fish -l
+        fi
+        ;;
+    up|start|daemon)
+        start_env
+        ;;
+    server)
+        require_project_root
+        require_workspace
+        ensure_docker
+        ensure_image
+        compose --profile server up frida-server
+        ;;
+    ps)
+        start_env
+        compose exec -T revebian frida-ps-local "$@"
+        ;;
+    attach)
+        [[ $# -gt 0 ]] || die "usage: revebian attach <pid|process-name> [frida args...]"
+        start_env
+        if [[ -t 0 && -t 1 ]]; then
+            compose exec revebian frida-attach-local "$@"
+        else
+            compose exec -T revebian frida-attach-local "$@"
+        fi
+        ;;
+    exec)
+        [[ $# -gt 0 ]] || die "usage: revebian exec <command> [args...]"
+        start_env
+        if [[ -t 0 && -t 1 ]]; then
+            compose exec revebian "$@"
+        else
+            compose exec -T revebian "$@"
+        fi
+        ;;
+    build|rebuild)
+        build_image "$@"
+        ;;
+    install)
+        install_cli "$@"
+        ;;
+    uninstall)
+        uninstall_cli "$@"
+        ;;
+    doctor)
+        doctor
+        ;;
+    stop|down)
+        require_project_root
+        ensure_docker
+        compose --profile server down --remove-orphans
+        ;;
+    help|-h|--help)
+        usage
+        ;;
+    version|--version)
+        echo "revebian ${VERSION}"
+        ;;
+    *)
+        echo "unknown command: ${cmd}" >&2
+        usage >&2
+        exit 2
+        ;;
+esac

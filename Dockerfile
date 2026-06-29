@@ -17,6 +17,7 @@ ARG USER_GID=1000
 ARG FRIDA_VERSION=17.15.3
 ARG FRIDA_TOOLS_VERSION=14.10.4
 ARG JAQ_VERSION=3.1.0
+ARG INSTALL_WINE=0
 
 RUN set -eux; \
     apt-get update; \
@@ -51,6 +52,9 @@ RUN set -eux; \
         xxd \
         xz-utils \
         zoxide; \
+    if [[ "${INSTALL_WINE}" == "1" ]]; then \
+        apt-get install -y --no-install-recommends wine64; \
+    fi; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
@@ -123,7 +127,7 @@ RUN set -eux; \
         "alias ll='eza -lh --group-directories-first --git --icons=auto'" \
         "alias ls='eza --group-directories-first --icons=auto'" \
         "alias py='python3'" \
-        'if command -v zoxide >/dev/null 2>&1; then' \
+        'if [ -n "${BASH_VERSION:-}" ] && command -v zoxide >/dev/null 2>&1; then' \
         '    eval "$(zoxide init bash)"' \
         'fi' \
         >/etc/profile.d/re-toolkit.sh
@@ -184,11 +188,12 @@ RUN set -eux; \
         '#!/usr/bin/env bash' \
         'set -euo pipefail' \
         'cat <<EOF' \
-        'setup:       ./setup.sh' \
-        'shell:       ./run.sh' \
-        'up:          ./run.sh up' \
-        'server:      ./run.sh server' \
-        'stop:        ./run.sh stop' \
+        'host build:  revebian build' \
+        'host wine:   revebian build --wine' \
+        'host shell:  revebian' \
+        'host up:     revebian up' \
+        'host server: revebian server' \
+        'host stop:   revebian stop' \
         'daemon:      start-frida-server' \
         'ps:          frida-ps-local' \
         'attach:      frida-attach-local <pid|name> -l hook.js' \

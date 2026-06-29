@@ -6,6 +6,7 @@ services:
         BASE_PLATFORM: linux/amd64
         USER_UID: ${USER_UID:-1000}
         USER_GID: ${USER_GID:-1000}
+        INSTALL_WINE: ${INSTALL_WINE:-0}
     image: revebian
     platform: linux/amd64
     stdin_open: true
@@ -23,7 +24,9 @@ services:
       FRIDA_LISTEN: 0.0.0.0:27042
       FRIDA_HOST: 127.0.0.1:27042
     volumes:
-      - .:/workspace
+      - type: bind
+        source: ${REVEBIAN_WORKSPACE:-.}
+        target: /workspace
     working_dir: /workspace
     command: sleep infinity
 
@@ -36,6 +39,7 @@ services:
         BASE_PLATFORM: linux/amd64
         USER_UID: ${USER_UID:-1000}
         USER_GID: ${USER_GID:-1000}
+        INSTALL_WINE: ${INSTALL_WINE:-0}
     image: revebian
     platform: linux/amd64
     stdin_open: true
@@ -52,6 +56,8 @@ services:
     environment:
       FRIDA_LISTEN: 0.0.0.0:27042
     volumes:
-      - .:/workspace
+      - type: bind
+        source: ${REVEBIAN_WORKSPACE:-.}
+        target: /workspace
     working_dir: /workspace
     command: frida-server-foreground
