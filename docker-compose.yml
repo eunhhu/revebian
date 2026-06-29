@@ -1,0 +1,57 @@
+services:
+  revebian:
+    build:
+      context: .
+      args:
+        BASE_PLATFORM: linux/amd64
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: revebian
+    platform: linux/amd64
+    stdin_open: true
+    tty: true
+    cap_add:
+      - SYS_PTRACE
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "127.0.0.1:${FRIDA_HOST_PORT:-27042}:27042"
+      - "127.0.0.1:${FRIDA_CONTROL_PORT:-27043}:27043"
+    environment:
+      FRIDA_LISTEN: 0.0.0.0:27042
+      FRIDA_HOST: 127.0.0.1:27042
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: sleep infinity
+
+  frida-server:
+    profiles:
+      - server
+    build:
+      context: .
+      args:
+        BASE_PLATFORM: linux/amd64
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+    image: revebian
+    platform: linux/amd64
+    stdin_open: true
+    tty: true
+    cap_add:
+      - SYS_PTRACE
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - seccomp=unconfined
+    ports:
+      - "127.0.0.1:${FRIDA_HOST_PORT:-27042}:27042"
+      - "127.0.0.1:${FRIDA_CONTROL_PORT:-27043}:27043"
+    environment:
+      FRIDA_LISTEN: 0.0.0.0:27042
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command: frida-server-foreground
